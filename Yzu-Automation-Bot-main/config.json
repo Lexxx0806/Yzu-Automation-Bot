@@ -1,0 +1,15 @@
+{
+    "portal_url": "https://your-school-portal.edu",
+
+    "download_folder": "C:/Users/YourName/Downloads/SchoolFiles",
+
+    "course_name": "My Course",
+
+    "week_label": "Week 1",
+
+    "github_enabled": true,
+
+    "github_repo_url": "https://github.com/YourUsername/school-files",
+
+    "github_branch": "main"
+}

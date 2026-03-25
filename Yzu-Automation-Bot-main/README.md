@@ -1,1 +1,1 @@
-# Yzu-Automation-Bot
+# School Files
