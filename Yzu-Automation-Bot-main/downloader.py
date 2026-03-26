@@ -99,6 +99,24 @@ async def auto_login(page, username, password):
         input("  Press Enter once logged in...")
 
 
+# ── Cleanup junk files ──────────────────────────────
+def cleanup_junk_files(base_folder: Path):
+    """Remove files with no extension or UUID-style names left by failed downloads."""
+    removed = 0
+    for f in base_folder.rglob("*"):
+        if not f.is_file():
+            continue
+        # Remove files with no extension (UUID temp files)
+        if f.suffix == "":
+            f.unlink()
+            removed += 1
+        # Remove files that look like UUIDs (8-4-4-4-12 hex pattern)
+        elif re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]+', f.stem, re.IGNORECASE):
+            f.unlink()
+            removed += 1
+    if removed:
+        print(f"  Cleaned up {removed} junk file(s)")
+
 # ── Download a single file by AttachmentID ──────────
 async def download_attachment(context, page, attach_id, filename, dest_path):
     try:
@@ -300,6 +318,7 @@ async def run():
     password    = os.getenv("YZU_PASSWORD", "")
 
     make_folder(base_folder)
+    cleanup_junk_files(base_folder)  # ← add this line
 
     print("\n" + "="*55)
     print("  YZU Portal File Downloader")

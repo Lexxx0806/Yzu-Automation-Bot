@@ -1,15 +1,11 @@
 {
-  "portal_url": "https://portalx.yzu.edu.tw/PortalSocialVB/Login.aspx",
+    "portal_url": "https://portalx.yzu.edu.tw/PortalSocialVB/Login.aspx",
 
-  "download_folder": "C:/Users/spawn/OneDrive/Desktop/School Files",
+    "download_folder": "C:/Users/YourName/Desktop/School Files",
 
-  "course_name": "My Course",
+    "github_enabled": false,
 
-  "week_label": "Week 1",
+    "github_repo_url": "",
 
-  "github_enabled": true,
-
-  "github_repo_url": "https://github.com/Lexxx0806/Yzu-Automation-Bot.git",
-
-  "github_branch": "main"
+    "github_branch": "main"
 }
