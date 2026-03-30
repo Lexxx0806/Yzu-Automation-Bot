@@ -29,3 +29,6 @@ School Files/
 # Playwright
 playwright-report/
 test-results/
+
+config.json
+downloaded_files.json
