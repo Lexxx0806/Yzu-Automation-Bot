@@ -1,5 +1,4 @@
 @echo off
-title School Downloader - Setup
 echo.
 echo ============================================
 echo   School Portal Downloader - SETUP
@@ -9,17 +8,15 @@ echo This will install everything you need.
 echo Please wait, this may take a few minutes...
 echo.
 
-REM Check if Python is installed
-python --version >nul 2>&1
-if %errorlevel% neq 0 (
-    echo [ERROR] Python is not installed on your computer!
+where python >nul 2>&1
+if errorlevel 1 (
+    echo [ERROR] Python is not installed!
     echo.
     echo Please do this first:
-    echo  1. Open your browser and go to: https://www.python.org/downloads/
-    echo  2. Click the big yellow "Download Python" button
-    echo  3. Run the installer - IMPORTANT: check the box that says
-    echo     "Add Python to PATH" before clicking Install
-    echo  4. After installing, run this setup.bat again
+    echo   1. Go to: https://www.python.org/downloads/
+    echo   2. Download and install Python 3
+    echo   3. IMPORTANT: Check "Add Python to PATH" during install
+    echo   4. After installing, run this script again
     echo.
     pause
     exit /b 1
@@ -28,11 +25,10 @@ if %errorlevel% neq 0 (
 echo [OK] Python found!
 echo.
 
-REM Install pip packages
 echo Installing required packages...
 echo.
 python -m pip install --upgrade pip
-python -m pip install playwright
+python -m pip install playwright python-dotenv
 
 echo.
 echo Installing browser engine (Chromium)...
@@ -44,11 +40,11 @@ echo   Setup complete!
 echo ============================================
 echo.
 echo NEXT STEPS:
-echo  1. Open config.json with Notepad
-echo  2. Replace "https://your-school-portal.edu" with your real portal URL
-echo  3. Replace "C:/Users/YourName/Downloads/SchoolFiles" with your actual
-echo     Windows username (check what it says in C:\Users\)
-echo  4. Set your course name and week label
-echo  5. Save the file, then double-click run.bat to start!
+echo   1. Create a .env file with your YZU credentials:
+echo        YZU_USERNAME=your_student_id
+echo        YZU_PASSWORD=your_password
+echo   2. (Optional) Edit download_folder in config.json
+echo        Default save location: %USERPROFILE%\Downloads\School Files
+echo   3. Start the bot: double-click run.bat
 echo.
 pause

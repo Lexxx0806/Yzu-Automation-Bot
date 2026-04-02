@@ -11,6 +11,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import urllib.parse
 from pathlib import Path
 from playwright.async_api import async_playwright
@@ -148,6 +149,63 @@ async def auto_login(page, username, password):
         input()
 
 
+# ── Auto-discover courses from sidebar ──────────────
+async def auto_discover_courses(page, base_url) -> dict | None:
+    """Scrape PageIDs and course names from the portal left sidebar."""
+    print("\n  Auto-discovering courses from portal sidebar...")
+    try:
+        current_url = page.url
+        home_url = f"{base_url}/PortalSocialVB/FMain/DefaultPage.aspx"
+        if home_url.lower() not in current_url.lower():
+            await page.goto(
+                f"{base_url}/PortalSocialVB/FMain/DefaultPage.aspx?Menu=Default&LogExcute=Y",
+                wait_until="networkidle",
+                timeout=30000
+            )
+
+        # Wait for the sidebar container that holds course links
+        try:
+            await page.wait_for_selector(
+                "#MainLeftMenu_divMyPage, td[onclick*='GoToPage']",
+                timeout=15000
+            )
+        except Exception:
+            pass  # proceed anyway and try to scrape whatever is there
+
+        # Run in-browser JS — more reliable than Playwright element queries
+        # for dynamically rendered ASP.NET content
+        raw = await page.evaluate("""
+            () => Array.from(document.querySelectorAll('[onclick*="GoToPage"]'))
+                .map(el => ({
+                    id:   (el.getAttribute('onclick').match(/GoToPage\\('(\\d+)'/) || [])[1],
+                    name: el.innerText.trim()
+                }))
+                .filter(c => c.id && c.name)
+        """)
+
+        if not raw:
+            # Last resort: regex over raw HTML
+            html = await page.content()
+            raw = [
+                {"id": m.group(1), "name": ""}
+                for m in re.finditer(r"GoToPage\('(\d+)'", html)
+            ]
+
+        courses = {c["id"]: c["name"] for c in raw if c.get("id")}
+
+        if courses:
+            print(f"  [OK] Found {len(courses)} course(s):")
+            for name in courses.values():
+                print(f"    • {name or '(unnamed)'}")
+            return courses
+
+        print("  [!] No courses found in sidebar — falling back to config.")
+        return None
+    except Exception as e:
+        print(f"  [!] Auto-discovery failed: {e} — falling back to config.")
+        return None
+
+
 # ── Cleanup junk files ──────────────────────────────
 def cleanup_junk_files(base_folder: Path):
     """Remove UUID temp files and no-extension files left by failed downloads."""
@@ -156,15 +214,12 @@ def cleanup_junk_files(base_folder: Path):
         re.IGNORECASE
     )
     removed = 0
-    # rglob covers root folder AND all subfolders
     for f in base_folder.rglob("*"):
         if not f.is_file():
             continue
-        # No extension UUID files (what you're seeing in the screenshot)
         if f.suffix == "" and uuid_pattern.match(f.stem):
             f.unlink()
             removed += 1
-        # Any leftover no-extension files that aren't real files
         elif f.suffix == "" and len(f.stem) > 20:
             f.unlink()
             removed += 1
@@ -188,11 +243,6 @@ async def wait_for_html_condition(page, condition_fn, interval=0.3, timeout=15):
 
 # ── Parse all DownloadFile links from raw HTML ──────
 def parse_download_links(html: str) -> list[tuple[str, str]]:
-    """
-    Scrapes all DownloadFile links directly from raw HTML.
-    Returns list of (attach_id, raw_filename) tuples.
-    This is used as a reliable fallback to catch anything the DOM query missed.
-    """
     results = []
     seen = set()
     for href in re.findall(r'href=["\']([^"\']*DownloadFile[^"\']*)["\']', html):
@@ -208,16 +258,11 @@ def parse_download_links(html: str) -> list[tuple[str, str]]:
 
 # ── Collect attachments from one post ──────────────
 async def collect_post_attachments(page, post_id: str) -> list[tuple[str, str]]:
-    """
-    Expands a post and collects all download links.
-    Uses both DOM query and raw HTML regex as a double-check.
-    """
     try:
         await page.evaluate(f"ShowPostGridUnique({post_id}, 0)")
     except Exception:
         return []
 
-    # Wait longer (8s) and check for the specific post div loading
     await wait_for_html_condition(
         page,
         lambda h: f'divPost{post_id}' in h,
@@ -225,13 +270,11 @@ async def collect_post_attachments(page, post_id: str) -> list[tuple[str, str]]:
         timeout=8
     )
 
-    # Give extra time for download links to render inside the post
     await asyncio.sleep(0.5)
 
     results = []
     seen    = set()
 
-    # Method 1: DOM query — precise, targets only this post's div
     try:
         post_div = await page.query_selector(f"#divPost{post_id}")
         if post_div:
@@ -247,7 +290,6 @@ async def collect_post_attachments(page, post_id: str) -> list[tuple[str, str]]:
     except Exception:
         pass
 
-    # Method 2: Raw HTML of the post div — catches links DOM query might miss
     try:
         post_html = await page.evaluate(
             f"document.getElementById('divPost{post_id}')?.innerHTML || ''"
@@ -286,7 +328,6 @@ async def scan_course(page, context, page_id, course_name, base_folder, base_url
         print(f"    No posts found — skipping")
         return 0
 
-    # ── Collect all post IDs across all pages ─────────
     all_post_ids = []
     seen_post_ids = set()
     page_index = 1
@@ -311,15 +352,11 @@ async def scan_course(page, context, page_id, course_name, base_folder, base_url
 
     print(f"    {len(all_post_ids)} posts found — scanning for attachments...")
 
-    # ── Phase 1: expand each post and collect attachments ──
-    all_attachments = {}  # attach_id -> raw_filename (deduped by ID)
+    all_attachments = {}
     for post_id in all_post_ids:
         for aid, afn in await collect_post_attachments(page, post_id):
             all_attachments[aid] = afn
 
-    # ── Phase 2: full page sweep as safety net ────────
-    # Expand ALL posts at once and scrape the entire page HTML
-    # This catches anything the per-post loop missed
     try:
         full_html = await page.content()
         sweep_found = 0
@@ -332,9 +369,22 @@ async def scan_course(page, context, page_id, course_name, base_folder, base_url
     except Exception:
         pass
 
+    # Deduplicate: same filename can appear with multiple AttachmentIDs
+    # (e.g. linked from two posts, or re-uploaded). Keep highest ID only —
+    # otherwise the script flip-flops between IDs every run, re-downloading forever.
+    deduped: dict[str, tuple[str, str]] = {}
+    for aid, afn in all_attachments.items():
+        try:
+            fname_key = sanitize(urllib.parse.unquote_plus(afn))
+        except Exception:
+            fname_key = sanitize(afn)
+        existing_aid = deduped.get(fname_key, ("0",))[0]
+        if int(aid) > int(existing_aid):
+            deduped[fname_key] = (aid, afn)
+    all_attachments = {aid: afn for aid, afn in deduped.values()}
+
     print(f"    {len(all_attachments)} total attachment(s) found")
 
-    # ── Phase 3: decide what to download ──────────────
     to_download = []
     for attach_id, raw_filename in all_attachments.items():
         try:
@@ -348,16 +398,11 @@ async def scan_course(page, context, page_id, course_name, base_folder, base_url
         clean_fname = sanitize(fname)
         dest        = course_path / clean_fname
 
-        # File missing — download it
         if not dest.exists() and not (course_path / sanitize(raw_filename)).exists():
             to_download.append((attach_id, fname, clean_fname, dest, False))
-
-        # File exists but professor uploaded a newer version
         elif is_updated(tracking, sanitize(course_name), clean_fname, attach_id):
             print(f"    [UPDATE DETECTED] {clean_fname}")
             to_download.append((attach_id, fname, clean_fname, dest, True))
-
-        # Already up to date
         else:
             print(f"    [SKIP] {clean_fname}")
 
@@ -370,7 +415,6 @@ async def scan_course(page, context, page_id, course_name, base_folder, base_url
     if new_count:    print(f"    {new_count} new file(s)")
     if update_count: print(f"    {update_count} updated file(s)")
 
-    # ── Phase 4: concurrent downloads ─────────────────
     lock = asyncio.Lock()
 
     async def do_download(attach_id, fname, clean_fname, dest, is_update):
@@ -431,11 +475,16 @@ async def download_attachment(context, page, attach_id, filename, dest_path, sem
 
 # ── Main ────────────────────────────────────────────
 async def run():
-    cfg         = load_config()
-    base_folder = Path(cfg.get("download_folder", str(Path.home() / "Downloads" / "School Files")))
-    base_url    = "https://portalx.yzu.edu.tw"
-    username    = os.getenv("YZU_USERNAME", "")
-    password    = os.getenv("YZU_PASSWORD", "")
+    cfg = load_config()
+
+    # Cross-platform download folder:
+    # Use config value if set, otherwise fall back to ~/Downloads/School Files
+    raw_folder  = cfg.get("download_folder", "").strip()
+    base_folder = Path(raw_folder) if raw_folder else Path.home() / "Downloads" / "School Files"
+
+    base_url = "https://portalx.yzu.edu.tw"
+    username = os.getenv("YZU_USERNAME", "")
+    password = os.getenv("YZU_PASSWORD", "")
 
     make_folder(base_folder)
     cleanup_junk_files(base_folder)
@@ -447,16 +496,17 @@ async def run():
     print("="*55)
     print(f"  Saving to  : {base_folder}")
     print(f"  Account    : {username or 'Not set in .env'}")
-    print(f"  Courses    : {len(COURSES)}")
+    print(f"  Courses    : {len(COURSES)} (hardcoded fallback — will auto-discover after login)")
     for name in COURSES.values():
         print(f"    • {name}")
     print("="*55)
 
     async with async_playwright() as p:
+        launch_args = ["--start-maximized"] if sys.platform != "darwin" else []
         browser = await p.chromium.launch(
             headless=False,
             downloads_path=str(base_folder),
-            args=["--start-maximized"]
+            args=launch_args
         )
         context = await browser.new_context(accept_downloads=True, viewport=None)
 
@@ -467,6 +517,9 @@ async def run():
         else:
             print("  No credentials in .env — log in manually then press Enter.")
             input()
+
+        discovered = await auto_discover_courses(page, base_url)
+        courses = discovered if discovered else COURSES
 
         dl_sem     = asyncio.Semaphore(MAX_CONCURRENT_DOWNLOADS)
         course_sem = asyncio.Semaphore(MAX_CONCURRENT_COURSES)
@@ -488,7 +541,7 @@ async def run():
         await page.close()
         results = await asyncio.gather(*[
             scan_with_sem(pid, name)
-            for pid, name in COURSES.items()
+            for pid, name in courses.items()
         ])
 
         save_tracking(tracking)
@@ -500,9 +553,11 @@ async def run():
         print("="*55)
 
         if cfg.get("github_enabled") and total > 0:
-            await asyncio.get_event_loop().run_in_executor(
+            await asyncio.get_running_loop().run_in_executor(
                 None, push_to_github, Path(__file__).parent, cfg
             )
+
+        cleanup_junk_files(base_folder)
 
         input("\nPress Enter to close...")
         await browser.close()

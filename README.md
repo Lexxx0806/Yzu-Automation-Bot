@@ -23,8 +23,10 @@ Built by a YZU student, for YZU students. Contributions welcome!
 
 ## 🖥️ Requirements
 
-- Windows 10/11
-- Python 3.10+ — ⚠️ check **"Add Python to PATH"** during install
+- Windows 10/11 or macOS
+- Python 3.10+
+  - **Windows:** ⚠️ check **"Add Python to PATH"** during install
+  - **macOS:** Python 3 can be installed from [python.org](https://www.python.org/downloads/) or via Homebrew (`brew install python`)
 - Git (only needed for GitHub push feature)
 
 ---
@@ -41,10 +43,17 @@ Or click the green **Code** button → **Download ZIP** and extract it.
 ---
 
 ### Step 2 — Install dependencies
-Open a terminal in the project folder and run:
+
+**Windows:**
 ```bash
 pip install playwright python-dotenv
 python -m playwright install chromium
+```
+
+**macOS:**
+```bash
+pip3 install playwright python-dotenv
+python3 -m playwright install chromium
 ```
 
 ---
@@ -64,15 +73,18 @@ Open `config.json` and update:
 ```json
 {
     "portal_url": "https://portalx.yzu.edu.tw/PortalSocialVB/Login.aspx",
-    "download_folder": "C:/Users/YourName/OneDrive/Desktop/School Files",
+    "download_folder": "",
     "github_enabled": false,
     "github_repo_url": "",
     "github_branch": "main"
 }
 ```
-- Set `download_folder` to wherever you want files saved on your laptop
-- Replace `YourName` with your actual Windows username
-- If your Desktop is inside OneDrive (common on Windows 11), make sure the path includes `OneDrive/Desktop`
+- Leave `download_folder` as `""` to use the default save location (`~/Desktop/School Files` on both Windows and macOS)
+- Or set it to a custom path:
+  - **Windows:** `"C:/Users/YourName/OneDrive/Desktop/School Files"`
+  - **macOS:** `"/Users/YourName/Desktop/School Files"`
+
+> 💡 **Windows 11 tip:** If your Desktop is inside OneDrive (common on Windows 11), make sure the path includes `OneDrive/Desktop`, not just `Desktop`.
 
 ---
 
@@ -99,9 +111,14 @@ COURSES = {
 
 ## ▶️ Running the Downloader
 
-Open a terminal in the project folder and run:
+**Windows:**
 ```bash
 python downloader.py
+```
+
+**macOS:**
+```bash
+python3 downloader.py
 ```
 
 The script will:
@@ -159,9 +176,21 @@ If you want files automatically pushed to a GitHub repo after each download:
 "github_repo_url": "https://github.com/YourUsername/your-repo.git",
 "github_branch": "main"
 ```
-3. In your terminal, initialize git in the project folder:
+3. Initialize git in the project folder:
+
+**Windows:**
 ```bash
 cd "C:/Users/YourName/OneDrive/Desktop/Yzu-Automation-Bot"
+git init -b main
+git remote add origin https://github.com/YourUsername/your-repo.git
+git add .
+git commit -m "Initial commit"
+git push -u origin main
+```
+
+**macOS:**
+```bash
+cd ~/Desktop/Yzu-Automation-Bot
 git init -b main
 git remote add origin https://github.com/YourUsername/your-repo.git
 git add .
@@ -179,13 +208,18 @@ After that, every time you run `downloader.py` and new files are found, they wil
 ## 🔧 Troubleshooting
 
 **"No module named playwright"**
-→ Run `pip install playwright` then `python -m playwright install chromium`
+→ Run `pip install playwright` (Windows) or `pip3 install playwright` (macOS), then install Chromium:
+```bash
+python -m playwright install chromium      # Windows
+python3 -m playwright install chromium     # macOS
+```
 
 **Login fails**
 → Make sure your `.env` file has the correct student ID and password. Try logging in manually on the portal to verify.
 
 **Files not saving to the right place**
-→ On Windows 11, your Desktop is usually inside OneDrive. Make sure your `download_folder` path in `config.json` includes `OneDrive/Desktop`, not just `Desktop`.
+→ Leave `download_folder` empty in `config.json` to use the default (`~/Desktop/School Files`). If setting a custom path, make sure it exists or the script will create it.
+→ On Windows 11, your Desktop is often inside OneDrive. If so, use `C:/Users/YourName/OneDrive/Desktop/School Files`.
 
 **Script only downloads some files from a course**
 → The script uses a full page sweep after scanning individual posts to catch any missed attachments. If files are still missing, the portal may have been slow — just run the script again and it will pick up what was missed.
